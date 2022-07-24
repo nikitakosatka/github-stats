@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package stats.fetcher.grpc;
+
+import "google/protobuf/timestamp.proto";
+
+message GithubFetcherRequest {
+  string login = 1;
+  optional google.protobuf.Timestamp date_start = 2;
+  optional google.protobuf.Timestamp date_end = 3;
+}
+
+message GithubFetcherResponse {
+  string name = 1;
+  string login = 2;
+  uint32 stars = 3;
+  uint32 commits = 4;
+  uint32 pull_requests = 5;
+  uint32 issues = 6;
+  uint32 contributed_to = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+service GithubFetcher {
+  rpc get_info (GithubFetcherRequest) returns (GithubFetcherResponse);
+}

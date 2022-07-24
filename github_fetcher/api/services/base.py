@@ -1,13 +1,44 @@
+from concurrent import futures
 from datetime import datetime
 
+import grpc
 import requests
 from dateutil.relativedelta import relativedelta
+from google.protobuf.timestamp_pb2 import Timestamp
 
-from stats.api.utils import GITHUB_TOKEN
-from stats.api.schemas import UserInfo
+from github_fetcher.api.utils import GITHUB_TOKEN
+from github_fetcher.api.schemas import UserInfo
+from github_fetcher.api.services.github_fetcher_pb2 import (
+    GithubFetcherResponse)
+from github_fetcher.api.services import github_fetcher_pb2_grpc
 
 
-async def get_base_info(nickname: str) -> UserInfo:
+class GithubService(github_fetcher_pb2_grpc.GithubFetcherServicer):
+    def get_info(self, request, context):
+        date_start = None
+
+        if request.date_start.seconds != 0:
+            date_start = datetime.fromtimestamp(
+                request.date_start.seconds + request.date_start.nanos / 1e9)
+
+        date_end = datetime.fromtimestamp(
+            request.date_end.seconds + request.date_end.nanos / 1e9)
+        response = get_info_fetcher(request.login, date_start, date_end)
+
+        created_at = Timestamp()
+        created_at.FromDatetime(response.created_at)
+
+        return GithubFetcherResponse(name=response.name,
+                                     login=response.login,
+                                     stars=response.stars,
+                                     commits=response.commits,
+                                     pull_requests=response.pull_requests,
+                                     issues=response.issues,
+                                     contributed_to=response.contributed_to,
+                                     created_at=created_at)
+
+
+def get_base_info(nickname: str) -> UserInfo:
     query = """
             query userInfo($login: String!) {
             user(login: $login) {
@@ -74,8 +105,8 @@ async def get_base_info(nickname: str) -> UserInfo:
                         created_at=response['createdAt'])
 
 
-async def count_user_commits(nickname: str, date_start: datetime,
-                             date_end: datetime):
+def count_user_commits(nickname: str, date_start: datetime,
+                       date_end: datetime):
     years_count = relativedelta(date_end, date_start).years + 1
     cur_date_end = date_start
 
@@ -85,8 +116,7 @@ async def count_user_commits(nickname: str, date_start: datetime,
         cur_date_start = date_start + relativedelta(years=year)
         cur_date_end = min(date_end, cur_date_end + relativedelta(years=1))
 
-        response = await get_api_response(nickname, cur_date_start,
-                                          cur_date_end)
+        response = get_api_response(nickname, cur_date_start, cur_date_end)
 
         total_commit_contributions = \
             response['data']['user']['contributionsCollection'][
@@ -103,9 +133,9 @@ async def count_user_commits(nickname: str, date_start: datetime,
     return commits
 
 
-async def get_api_response(nickname: str,
-                           date_start: datetime = None,
-                           date_end: datetime = None):
+def get_api_response(nickname: str,
+                     date_start: datetime = None,
+                     date_end: datetime = None):
     query = """
        query userInfo($login: String!, $from: DateTime, $to: DateTime) {
          user(login: $login) {
@@ -174,8 +204,10 @@ async def get_api_response(nickname: str,
                          headers={"Authorization": GITHUB_TOKEN}).json()
 
 
-async def get_info(nickname: str, date_start: datetime, date_end: datetime):
-    user_info = await get_base_info(nickname)
+def get_info_fetcher(nickname: str,
+                     date_start: datetime,
+                     date_end: datetime):
+    user_info = get_base_info(nickname)
 
     if not date_end:
         date_end = datetime.now().replace(tzinfo=None)
@@ -183,6 +215,19 @@ async def get_info(nickname: str, date_start: datetime, date_end: datetime):
     if not date_start:
         date_start = user_info.created_at.replace(tzinfo=None)
 
-    user_info.commits = await count_user_commits(nickname, date_start, date_end)
+    user_info.commits = count_user_commits(nickname, date_start, date_end)
 
     return user_info
+
+
+def serve():
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    github_fetcher_pb2_grpc.add_GithubFetcherServicer_to_server(GithubService(),
+                                                                server)
+    server.add_insecure_port("[::]:50051")
+    server.start()
+    server.wait_for_termination()
+
+
+if __name__ == '__main__':
+    serve()

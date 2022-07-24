@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from stats.api.routers import base
+from routers import base
 
 app = FastAPI()
 
