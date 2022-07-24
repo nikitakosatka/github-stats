@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta
-from math import ceil
+from datetime import datetime
 
 import requests
+from dateutil.relativedelta import relativedelta
 
-from stats.api.utils import GITHUB_TOKEN, DAYS_IN_YEAR
+from stats.api.utils import GITHUB_TOKEN
 from stats.api.schemas import UserInfo
 
 
@@ -63,7 +63,6 @@ async def get_base_info(nickname: str) -> UserInfo:
     if response:
         stars = sum(repo['stargazers']['totalCount'] for repo in
                     response['repositories']['nodes'])
-        print(response)
 
         return UserInfo(login=nickname,
                         name=response['name'],
@@ -77,14 +76,14 @@ async def get_base_info(nickname: str) -> UserInfo:
 
 async def count_user_commits(nickname: str, date_start: datetime,
                              date_end: datetime):
-    years_count = ceil((date_end - date_start).days / DAYS_IN_YEAR)
+    years_count = relativedelta(date_end, date_start).years + 1
     cur_date_end = date_start
 
     commits = 0
 
-    for year in range(years_count):
-        cur_date_start = date_start + timedelta(DAYS_IN_YEAR * year)
-        cur_date_end = min(date_end, cur_date_end + timedelta(DAYS_IN_YEAR))
+    for year in range(1, years_count + 1):
+        cur_date_start = date_start + relativedelta(years=year)
+        cur_date_end = min(date_end, cur_date_end + relativedelta(years=1))
 
         response = await get_api_response(nickname, cur_date_start,
                                           cur_date_end)
@@ -158,7 +157,7 @@ async def get_api_response(nickname: str,
        """
 
     if not date_start:
-        date_start = datetime.now() - timedelta(DAYS_IN_YEAR)
+        date_start = datetime.now() - relativedelta(years=1)
 
     if not date_end:
         date_end = datetime.now()
