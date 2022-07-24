@@ -81,7 +81,7 @@ async def count_user_commits(nickname: str, date_start: datetime,
 
     commits = 0
 
-    for year in range(1, years_count + 1):
+    for year in range(0, years_count):
         cur_date_start = date_start + relativedelta(years=year)
         cur_date_end = min(date_end, cur_date_end + relativedelta(years=1))
 
